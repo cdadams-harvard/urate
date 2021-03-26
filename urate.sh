@@ -13,7 +13,7 @@ echo "# What multiple Mendelian randomization approaches reveal about obesity an
 - Data and results (Supplement) (Supplement_data_results.xlsx)
 - Script for terminal commands (urate.sh) 
 - Script for analyses (urate.Rmd)
-- Manuscript submitted to medRxiv (Manuscript.docx)
+- Manuscript submitted to medRxiv (Manuscript2.docx)
 - Rpubs link for urate.Rmd: https://rpubs.com/Charleen_D_Adams/745696">> README.md
 
 git add README.md
@@ -33,19 +33,9 @@ git add urate.sh
 git commit -m "Terminal commands"
 git push --all
 
-# git add urate.Rmd
-git add urate.Rmd
-git commit -m "Removed the code to combine the results into a list. Previously TwoSampleMR's commands for combining all the results worked. There's a bug. I tried to sort it out by merging into a list, but in the end it was easier to just save the files separately."
-git push --all
-
 # Add .docx
 git add Manuscript2.docx
 git commit -m "Manuscript: formatted for medRxiv"
-git push --all
-
-# Add .sh
-git add urate.sh
-git commit -m "Updated commits"
 git push --all
 
 # git add Supplement_data_results.xlsx
@@ -58,10 +48,6 @@ git add urate.sh
 git commit -m "Updated commits"
 git push --all
 
-# Add .sh
-git add urate.sh
-git commit -m "Fixed the Rpubs link"
-git push --all
 
 # Useful commands
 
