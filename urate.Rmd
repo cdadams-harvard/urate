@@ -1,0 +1,822 @@
+---
+title: "What multiple Mendelian randomization approaches reveal about obesity and gout"
+author: "Charleen D. Adams"
+date: "`r Sys.Date()`"
+#output: rmarkdown::html_document
+output:
+  rmarkdown::html_document:
+    toc: true
+    toc_float: true
+    toc_depth: 2
+editor_options: 
+  chunk_output_type: console
+chunk_output_type: console
+self_contained: false
+#bibliography: wallace.bib
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r message=FALSE, include=FALSE}
+library(devtools)
+library(htmltools)
+library(biomaRt)
+library(readr)
+library(vcfR)
+library(tm)
+library(snpStats)
+library(coloc)
+library(hyprcoloc)
+library(TwoSampleMR)
+library(MRInstruments) 
+library(RadialMR)
+library(rcompanion)
+library(vcd)
+library(reshape2)
+library(stringr) 
+library(data.table)
+library(DataCombine)
+library(dplyr)
+library(tidyr)
+library(tidyverse)
+library(ggplot2)
+```
+
+# Obesity on gout
+
+```{r message=FALSE}
+# Obesity on gout
+setwd("/n/home04/cdadams/urate")
+exposure_dat <- extract_instruments(c('90'))
+exposure_dat <- clump_data(exposure_dat)
+
+outcome_dat <- extract_outcome_data(exposure_dat$SNP, c('UKB-b:13251'),
+  proxies = 1, rsq = 0.8, align_alleles = 1, 
+  palindromes = 1, maf_threshold = 0.3)
+
+dat <- harmonise_data(exposure_dat, outcome_dat, action = 2)
+mr_results <- mr(dat)
+mr_results
+
+# Outlier's check
+raddat <- format_radial(BXG=dat$beta.exposure, BYG=dat$beta.outcome, 
+  seBXG=dat$se.exposure, seBYG=dat$se.outcome, RSID=dat$SNP)
+ivwrad <- ivw_radial(raddat, alpha=0.05, weights=1)
+ivwrad2 <- ivw_radial(raddat, alpha=0.05, weights=1)
+dim(ivwrad$outliers)[1] 
+outliers=ivwrad$outliers[1]
+outliers
+
+myvars=outliers$SNP
+dat2 <- dat[ ! dat$SNP %in% myvars, ]
+mr_results <- mr(dat2, parameters = default_parameters())
+mr_results
+
+singlesnp_results=mr_singlesnp(dat2, parameters = default_parameters(),
+  single_method = "mr_wald_ratio", 
+  all_method = c("mr_ivw",
+  "mr_egger_regression", 
+  "mr_weighted_mode",
+  "mr_weighted_median"))
+mr_forest_plot(singlesnp_results, exponentiate = TRUE) #saved as PDF, dimensions 8x8
+mr_scatter_plot(mr_results, dat2)
+
+# Remove snps not used in MR
+singlesnp_results.2=singlesnp_results[1:13,]
+dim(singlesnp_results.2)
+dat2.1=dat2[which(dat2$SNP %in% singlesnp_results.2$SNP),]
+dat=dat2.1
+
+# For the multivarible MR, save the list of kept obesity SNPs
+obesity_SNPs=dat$SNP
+obesity_SNPs=as.character(obesity_SNPs)
+
+# r2 and Fstat
+dat$samplesize.outcome
+n=mean(dat$samplesize.exposure)
+k=13
+p=dat$eaf.exposure
+r2.1<-(2*(dat$beta.exposure^2)*p*(1-p))/1
+r2=sum(r2.1)
+r2 
+Fstat <- r2*(n-1-k)/((1-r2)*k)
+Fstat
+
+# Combine results
+sin=singlesnp_results
+res=mr_results
+het<-mr_heterogeneity(dat)
+plt<-mr_pleiotropy_test(dat)
+
+write.csv(mr_results,'res_obesity_gout.csv')
+write.csv(singlesnp_results,'singlesnps_obesity_gout.csv')
+write.csv(plt,'plt_obesity_gout.csv')
+write.csv(het,'het_obesity_gout.csv')
+write.csv(dat, 'SIMEX_dat_obesity_gout.csv')
+write.csv(outliers, 'outliers_obesity_gout.csv')
+write.csv(obesity_SNPs, 'kept_obesity_SNPs.csv') #for MVMR
+```
+
+# Obesity on urate
+
+```{r message=FALSE}
+# Obesity on urate
+exposure_dat <- extract_instruments(c('90'))
+exposure_dat <- clump_data(exposure_dat)
+outcome_dat <- extract_outcome_data(exposure_dat$SNP, c('1055'),
+  proxies = 1, rsq = 0.8, align_alleles = 1, 
+  palindromes = 1, maf_threshold = 0.3)
+dat <- harmonise_data(exposure_dat, outcome_dat, action = 2)
+mr_results <- mr(dat)
+mr_results
+
+# Outlier's check
+raddat <- format_radial(BXG=dat$beta.exposure, BYG=dat$beta.outcome, 
+  seBXG=dat$se.exposure, seBYG=dat$se.outcome, RSID=dat$SNP)
+ivwrad <- ivw_radial(raddat, alpha=0.05, weights=1)
+ivwrad2 <- ivw_radial(raddat, alpha=0.05, weights=1)
+dim(ivwrad$outliers)[1] 
+outliers=ivwrad$outliers[1]
+outliers
+
+myvars=outliers$SNP
+dat2 <- dat[ ! dat$SNP %in% myvars, ]
+mr_results <- mr(dat2)
+mr_results
+
+singlesnp_results=mr_singlesnp(dat2, parameters = default_parameters(),
+  single_method = "mr_wald_ratio", 
+  all_method = c("mr_ivw",
+  "mr_egger_regression", 
+  "mr_weighted_mode",
+  "mr_weighted_median"))
+mr_forest_plot(singlesnp_results, exponentiate = FALSE)#saved as PDF, dimensions 600x600
+mr_scatter_plot(mr_results, dat2)
+
+# Remove snps not used in MR
+singlesnp_results.2=singlesnp_results[1:13,]
+dim(singlesnp_results.2)
+dat2.1=dat2[which(dat2$SNP %in% singlesnp_results.2$SNP),]
+dat=dat2.1
+
+# r2 and Fstat
+dat$samplesize.outcome
+n=mean(dat$samplesize.exposure)
+k=13
+p=dat$eaf.exposure
+r2.1<-(2*(dat$beta.exposure^2)*p*(1-p))/1
+r2=sum(r2.1)
+r2 
+Fstat <- r2*(n-1-k)/((1-r2)*k)
+Fstat
+
+# Combine results
+sin=singlesnp_results
+res=mr_results
+het<-mr_heterogeneity(dat)
+plt<-mr_pleiotropy_test(dat)
+
+# all_res<-combine_all_mrresults(res,het,plt,sin,ao_slc=T,
+#   Exp=T,split.exposure=T,split.outcome=T)
+# all_res$lower_intercept=all_res$intercept-1.96*all_res$intercept_se
+# all_res$upper_intercept=all_res$intercept+1.96*all_res$intercept_se
+# all_res$r2=r2
+# all_res$Fstat=Fstat
+# head(all_res[,c("Method","outcome","exposure","nsnp","b","se","or", "or_lci95",  
+#   "or_uci95","pval","intercept","intercept_se","intercept_pval",
+#   "Q","Q_df","Q_pval","consortium","ncase","ncontrol","pmid","population")])
+# write.csv(all_res,"combined_results_obesity_urate.csv")
+
+write.csv(mr_results,'res_obesity_urate.csv')
+write.csv(singlesnp_results,'singlesnps_obesity_urate.csv')
+write.csv(plt,'plt_obesity_urate.csv')
+write.csv(het,'het_obesity_urate.csv')
+write.csv(dat, 'SIMEX_obesity_urate.csv')
+write.csv(outliers, 'outliers_obesity_urate.csv')
+```
+
+# Urate on gout
+
+```{r message=FALSE}
+# Urate on gout
+exposure_dat <- extract_instruments(c('1055')) #urate 
+exposure_dat <- clump_data(exposure_dat)
+outcome_dat <- extract_outcome_data(exposure_dat$SNP, c('UKB-b:13251'),
+  proxies = 1, rsq = 0.8, align_alleles = 1, 
+  palindromes = 1, maf_threshold = 0.3)
+
+dat <- harmonise_data(exposure_dat, outcome_dat, action = 2)
+mr_results <- mr(dat)
+mr_results
+
+# Outlier's check
+raddat <- format_radial(BXG=dat$beta.exposure, BYG=dat$beta.outcome, 
+  seBXG=dat$se.exposure, seBYG=dat$se.outcome, RSID=dat$SNP)
+ivwrad <- ivw_radial(raddat, alpha=0.05, weights=1)
+ivwrad2 <- ivw_radial(raddat, alpha=0.05, weights=1)
+dim(ivwrad$outliers)[1] 
+outliers=ivwrad$outliers[1]
+outliers
+
+myvars=outliers$SNP
+dat2 <- dat[ ! dat$SNP %in% myvars, ]
+
+mr_results <- mr(dat2)
+mr_results
+
+dat2$id.exposure="urate"
+dat2$exposure="urate"
+dat2$id.outcome="gout"
+dat2$outcome="gout"
+
+singlesnp_results=mr_singlesnp(dat2, parameters = default_parameters(),
+  single_method = "mr_wald_ratio", 
+  all_method = c("mr_ivw",
+  "mr_egger_regression", 
+  "mr_weighted_mode",
+  "mr_weighted_median"))
+mr_forest_plot(singlesnp_results, exponentiate = TRUE) #saved as PDF, dimensions 8x8
+
+dat2 <- dat[ ! dat$SNP %in% myvars, ]
+dat2$id.outcome="gout"
+dat2$outcome="gout"
+dat2$id.exposure="urate"
+dat2$exposure="urate"
+mr_results <- mr(dat2)
+mr_results
+
+mr_scatter_plot(mr_results, dat2)
+
+# Remove snps not used in MR
+singlesnp_results.2=singlesnp_results[1:16,]
+dim(singlesnp_results.2)
+dat2.1=dat2[which(dat2$SNP %in% singlesnp_results.2$SNP),]
+dat=dat2.1
+
+# For the multivariable MR, save the kept urate SNPs
+urate_SNPs=dat$SNP
+urate_SNPs=as.character(urate_SNPs)
+
+#r2 and Fstat
+dat$samplesize.outcome
+n=mean(dat$samplesize.exposure)
+k=16
+p=dat$eaf.exposure
+
+# No EAF
+#r2.1<-(2*(dat$beta.exposure^2)*p*(1-p))/1
+#r2=sum(r2.1)
+#r2 
+#Fstat <- r2*(n-1-k)/((1-r2)*k)
+#Fstat
+
+# Combine results
+sin=singlesnp_results
+res=mr_results
+het<-mr_heterogeneity(dat)
+plt<-mr_pleiotropy_test(dat)
+
+write.csv(mr_results,'res_urate_gout.csv')
+write.csv(singlesnp_results,'singlesnps_urate_gout.csv')
+write.csv(plt,'plt_urate_gout.csv')
+write.csv(het,'het_urate_gout.csv')
+write.csv(dat, 'SIMEX_urate_gout.csv')
+write.csv(dat, 'SIMEX_dat_urate_gout.csv')
+write.csv(outliers, 'outliers_urate_gout.csv')
+write.csv(urate_SNPs, "kept_urate_SNPs_urate_gout.csv")
+```
+
+# Urate on T2D
+
+```{r message=FALSE}
+# Urate on T2D
+exposure_dat <- extract_instruments(c('1055'))
+exposure_dat <- clump_data(exposure_dat)
+outcome_dat <- extract_outcome_data(exposure_dat$SNP, c('24'),
+  proxies = 1, rsq = 0.8, align_alleles = 1, 
+  palindromes = 1, maf_threshold = 0.3)
+
+dat <- harmonise_data(exposure_dat, outcome_dat, action = 2)
+mr_results <- mr(dat)
+mr_results
+
+# Outlier's check
+raddat <- format_radial(BXG=dat$beta.exposure, BYG=dat$beta.outcome, 
+  seBXG=dat$se.exposure, seBYG=dat$se.outcome, RSID=dat$SNP)
+ivwrad <- ivw_radial(raddat, alpha=0.05, weights=1)
+ivwrad2 <- ivw_radial(raddat, alpha=0.05, weights=1)
+dim(ivwrad$outliers)[1] 
+outliers=ivwrad$outliers[1]
+outliers
+myvars=outliers$SNP
+dat2 <- dat[ ! dat$SNP %in% myvars, ]
+
+dat2$id.exposure="urate"
+dat2$exposure="urate"
+dat2$id.outcome="T2D"
+dat2$outcome="T2D"
+mr_results <- mr(dat2)
+mr_results
+
+singlesnp_results=mr_singlesnp(dat2, parameters = default_parameters(),
+  single_method = "mr_wald_ratio", 
+  all_method = c("mr_ivw",
+  "mr_egger_regression", 
+  "mr_weighted_mode",
+  "mr_weighted_median"))
+mr_forest_plot(singlesnp_results, exponentiate = TRUE)#saved as PDF, dimensions 8x8
+mr_scatter_plot(mr_results, dat2)
+write.csv(mr_results,'res.csv')
+write.csv(singlesnp_results,'singlesnps.csv')
+
+# Remove snps not used in MR
+singlesnp_results.2=singlesnp_results[1:6,]
+dim(singlesnp_results.2)
+dat2.1=dat2[which(dat2$SNP %in% singlesnp_results.2$SNP),]
+dat=dat2.1
+write.csv(dat, 'SIMEX.csv')
+
+# r2 and Fstat
+n=mean(dat$samplesize.outcome)
+#n=mean(dat$samplesize.exposure)
+k=6
+p=dat$eaf.exposure
+r2.1<-(2*(dat$beta.exposure^2)*p*(1-p))/1
+r2=sum(r2.1)
+r2 
+Fstat <- r2*(n-1-k)/((1-r2)*k)
+Fstat
+
+# Combine results
+sin=singlesnp_results
+res=mr_results
+het<-mr_heterogeneity(dat)
+plt<-mr_pleiotropy_test(dat)
+
+write.csv(mr_results,'res_urate_T2D.csv')
+write.csv(singlesnp_results,'singlesnps_urate_T2D.csv')
+write.csv(plt,'plt_urate_T2D.csv')
+write.csv(het,'het_urate_T2D.csv')
+write.csv(dat, 'SIMEX_urate_T2D.csv')
+write.csv(dat, 'SIMEX_dat_urate_T2D.csv')
+write.csv(outliers, 'outliers_urate_T2D.csv')
+```
+
+# Obesity on HDL
+
+```{r message=FALSE}
+# Obesity on HDL
+exposure_dat <- extract_instruments(c('90'))
+exposure_dat <- clump_data(exposure_dat)
+outcome_dat <- extract_outcome_data(exposure_dat$SNP, c('299'), #,'300'
+  proxies = 1, rsq = 0.8, align_alleles = 1, palindromes = 1, maf_threshold = 0.3)
+dat <- harmonise_data(exposure_dat, outcome_dat, action = 2)
+mr_results <- mr(dat)
+
+# Outlier's check
+raddat <- format_radial(BXG=dat$beta.exposure, BYG=dat$beta.outcome, 
+  seBXG=dat$se.exposure, seBYG=dat$se.outcome, RSID=dat$SNP)
+ivwrad <- ivw_radial(raddat, alpha=0.05, weights=1)
+ivwrad2 <- ivw_radial(raddat, alpha=0.05, weights=1)
+dim(ivwrad$outliers)[1] 
+outliers=ivwrad$outliers[1]
+outliers
+myvars=outliers$SNP
+dat2 <- dat[ ! dat$SNP %in% myvars, ]
+mr_results <- mr(dat2)
+mr_results
+
+singlesnp_results=mr_singlesnp(dat2, parameters = default_parameters(),
+  single_method = "mr_wald_ratio", 
+  all_method = c("mr_ivw",
+  "mr_egger_regression", 
+  "mr_weighted_mode",
+  "mr_weighted_median"))
+mr_forest_plot(singlesnp_results, exponentiate = FALSE)#saved as PDF, dimensions 8x8
+mr_scatter_plot(mr_results, dat2)
+
+# Remove snps not used in MR
+singlesnp_results.2=singlesnp_results[1:14,]
+dim(singlesnp_results.2)
+dat2.1=dat2[which(dat2$SNP %in% singlesnp_results.2$SNP),]
+dat=dat2.1
+write.csv(dat, 'SIMEX.csv')
+
+# For the multivarible MR, save the list of kept obesity SNPs
+hdl_SNPs=dat$SNP
+hdl_SNPs=as.character(hdl_SNPs)
+
+# r2 and Fstat
+dat$samplesize.outcome
+n=mean(dat$samplesize.exposure)
+k=14
+p=dat$eaf.exposure
+r2.1<-(2*(dat$beta.exposure^2)*p*(1-p))/1
+r2=sum(r2.1)
+r2 
+Fstat <- r2*(n-1-k)/((1-r2)*k)
+Fstat
+
+# Combine results
+sin=singlesnp_results
+res=mr_results
+het<-mr_heterogeneity(dat)
+plt<-mr_pleiotropy_test(dat)
+
+write.csv(mr_results,'res_obesity_HDL.csv')
+write.csv(singlesnp_results,'singlesnps_obesity_HDL.csv')
+write.csv(plt,'plt_obesity_HDL.csv')
+write.csv(het,'het_obesity_HDL.csv')
+write.csv(dat, 'SIMEX_obesity_HDL.csv')
+write.csv(dat, 'SIMEX_dat_obesity_HDL.csv')
+write.csv(outliers, 'outliers_obesity_HDL.csv')
+write.csv(hdl_SNPs, 'kept_hdl_SNPs.csv')
+```
+
+# Obesity on LDL
+
+```{r message=FALSE}
+# Obesity on LDL
+exposure_dat <- extract_instruments(c('90'))
+exposure_dat <- clump_data(exposure_dat)
+outcome_dat <- extract_outcome_data(exposure_dat$SNP, c('300'), #,'300'
+  proxies = 1, rsq = 0.8, align_alleles = 1, palindromes = 1, maf_threshold = 0.3)
+dat <- harmonise_data(exposure_dat, outcome_dat, action = 2)
+mr_results <- mr(dat)
+
+# Outlier's check
+raddat <- format_radial(BXG=dat$beta.exposure, BYG=dat$beta.outcome, 
+  seBXG=dat$se.exposure, seBYG=dat$se.outcome, RSID=dat$SNP)
+ivwrad <- ivw_radial(raddat, alpha=0.05, weights=1)
+ivwrad2 <- ivw_radial(raddat, alpha=0.05, weights=1)
+dim(ivwrad$outliers)[1] 
+outliers=ivwrad$outliers[1]
+outliers
+write.csv(outliers, 'adv_outliers.csv')
+myvars=outliers$SNP
+dat2 <- dat[ ! dat$SNP %in% myvars, ]
+mr_results <- mr(dat2)
+mr_results
+
+singlesnp_results=mr_singlesnp(dat2, parameters = default_parameters(),
+  single_method = "mr_wald_ratio", 
+  all_method = c("mr_ivw",
+  "mr_egger_regression", 
+  "mr_weighted_mode",
+  "mr_weighted_median"))
+mr_forest_plot(singlesnp_results, exponentiate = FALSE)#saved as PDF, dimensions 8x8
+mr_scatter_plot(mr_results, dat2)
+
+# Remove snps not used in MR
+singlesnp_results.2=singlesnp_results[1:13,]
+dim(singlesnp_results.2)
+dat2.1=dat2[which(dat2$SNP %in% singlesnp_results.2$SNP),]
+dat=dat2.1
+write.csv(dat, 'SIMEX.csv')
+
+# For the multivarible MR, save the list of kept obesity SNPs
+ldl_SNPs=dat$SNP
+ldl_SNPs=as.character(ldl_SNPs)
+
+# r2 and Fstat
+dat$samplesize.outcome
+n=mean(dat$samplesize.exposure)
+k=13
+p=dat$eaf.exposure
+r2.1<-(2*(dat$beta.exposure^2)*p*(1-p))/1
+r2=sum(r2.1)
+r2 
+Fstat <- r2*(n-1-k)/((1-r2)*k)
+Fstat
+
+# Combine results
+sin=singlesnp_results
+res=mr_results
+het<-mr_heterogeneity(dat)
+plt<-mr_pleiotropy_test(dat)
+
+write.csv(mr_results,'res_obesity_LDL.csv')
+write.csv(singlesnp_results,'singlesnps_obesity_LDL.csv')
+write.csv(plt,'plt_obesity_LDL.csv')
+write.csv(het,'het_obesity_LDL.csv')
+write.csv(dat, 'SIMEX_obesity_LDL.csv')
+write.csv(dat, 'SIMEX_dat_obesity_LDL.csv')
+write.csv(outliers, 'outliers_obesity_LDL.csv')
+write.csv(ldl_SNPs, 'kept_ldl_SNPs.csv')
+```
+
+# Obesity on triglycerides
+
+```{r message=FALSE}
+# Obesity on triglycerides
+exposure_dat <- extract_instruments(c('90'))
+exposure_dat <- clump_data(exposure_dat)
+outcome_dat <- extract_outcome_data(exposure_dat$SNP, c('302'), #,'300'
+  proxies = 1, rsq = 0.8, align_alleles = 1, palindromes = 1, maf_threshold = 0.3)
+dat <- harmonise_data(exposure_dat, outcome_dat, action = 2)
+mr_results <- mr(dat)
+
+# Outlier's check
+raddat <- format_radial(BXG=dat$beta.exposure, BYG=dat$beta.outcome, 
+  seBXG=dat$se.exposure, seBYG=dat$se.outcome, RSID=dat$SNP)
+ivwrad <- ivw_radial(raddat, alpha=0.05, weights=1)
+ivwrad2 <- ivw_radial(raddat, alpha=0.05, weights=1)
+dim(ivwrad$outliers)[1] 
+outliers=ivwrad$outliers[1]
+outliers
+write.csv(outliers, 'adv_outliers.csv')
+myvars=outliers$SNP
+dat2 <- dat[ ! dat$SNP %in% myvars, ]
+mr_results <- mr(dat2)
+mr_results
+
+singlesnp_results=mr_singlesnp(dat2, parameters = default_parameters(),
+  single_method = "mr_wald_ratio", 
+  all_method = c("mr_ivw",
+  "mr_egger_regression", 
+  "mr_weighted_mode",
+  "mr_weighted_median"))
+mr_forest_plot(singlesnp_results, exponentiate = FALSE)#saved as PDF, dimensions 8x8
+mr_scatter_plot(mr_results, dat2)
+
+# Remove snps not used in MR
+singlesnp_results.2=singlesnp_results[1:15,]
+dim(singlesnp_results.2)
+dat2.1=dat2[which(dat2$SNP %in% singlesnp_results.2$SNP),]
+dat=dat2.1
+
+# r2 and Fstat
+dat$samplesize.outcome
+n=mean(dat$samplesize.exposure)
+n
+k=13
+p=dat$eaf.exposure
+r2.1<-(2*(dat$beta.exposure^2)*p*(1-p))/1
+r2=sum(r2.1)
+r2 
+Fstat <- r2*(n-1-k)/((1-r2)*k)
+Fstat
+
+# Combine results
+sin=singlesnp_results
+res=mr_results
+het<-mr_heterogeneity(dat)
+plt<-mr_pleiotropy_test(dat)
+
+write.csv(mr_results,'res_obesity_TRI.csv')
+write.csv(singlesnp_results,'singlesnps_obesity_TRI.csv')
+write.csv(plt,'plt_obesity_TRI.csv')
+write.csv(het,'het_obesity_TRI.csv')
+write.csv(dat, 'SIMEX_obesity_TRI.csv')
+write.csv(dat, 'SIMEX_dat_obesity_TRI.csv')
+write.csv(outliers, 'outliers_obesity_TRI.csv')
+```
+
+# HDL on urate
+
+```{r message=FALSE}
+# HDL on urate
+exposure_dat <- extract_instruments(c('299'))
+exposure_dat <- clump_data(exposure_dat)
+outcome_dat <- extract_outcome_data(exposure_dat$SNP, c('1055'), 
+  proxies = 1, rsq = 0.8, align_alleles = 1, palindromes = 1, maf_threshold = 0.3)
+dat <- harmonise_data(exposure_dat, outcome_dat, action = 2)
+mr_results <- mr(dat)
+
+# Outlier's check
+raddat <- format_radial(BXG=dat$beta.exposure, BYG=dat$beta.outcome, 
+  seBXG=dat$se.exposure, seBYG=dat$se.outcome, RSID=dat$SNP)
+ivwrad <- ivw_radial(raddat, alpha=0.05, weights=1)
+ivwrad2 <- ivw_radial(raddat, alpha=0.05, weights=1)
+dim(ivwrad$outliers)[1] 
+outliers=ivwrad$outliers[1]
+outliers
+myvars=outliers$SNP
+dat2 <- dat[ ! dat$SNP %in% myvars, ]
+mr_results <- mr(dat2)
+mr_results
+
+singlesnp_results=mr_singlesnp(dat2, parameters = default_parameters(),
+  single_method = "mr_wald_ratio", 
+  all_method = c("mr_ivw",
+  "mr_egger_regression", 
+  "mr_weighted_mode",
+  "mr_weighted_median"))
+mr_forest_plot(singlesnp_results, exponentiate = FALSE)#saved as PDF, dimensions 600x600
+mr_scatter_plot(mr_results, dat2)
+
+# Remove snps not used in MR
+singlesnp_results.2=singlesnp_results[1:64,]
+dim(singlesnp_results.2)
+dat2.1=dat2[which(dat2$SNP %in% singlesnp_results.2$SNP),]
+dat=dat2.1
+write.csv(dat, 'SIMEX.csv')
+
+# For the multivarible MR, save the list of kept obesity SNPs
+hdl_SNPs=dat$SNP
+hdl_SNPs=as.character(hdl_SNPs)
+
+#r2 and Fstat
+dat$samplesize.outcome
+n=mean(dat$samplesize.outcome)
+k=64
+p=dat$eaf.exposure
+r2.1<-(2*(dat$beta.exposure^2)*p*(1-p))/1
+r2=sum(r2.1)
+r2 
+Fstat <- r2*(n-1-k)/((1-r2)*k)
+Fstat
+
+# Combine results
+sin=singlesnp_results
+res=mr_results
+het<-mr_heterogeneity(dat)
+plt<-mr_pleiotropy_test(dat)
+
+write.csv(mr_results,'res_HDL_urate.csv')
+write.csv(singlesnp_results,'singlesnps_HDL_urate.csv')
+write.csv(plt,'plt_HDL_urate.csv')
+write.csv(het,'het_HDL_urate.csv')
+write.csv(dat, 'SIMEX_HDL_urate.csv')
+write.csv(dat, 'SIMEX_dat_HDL_urate.csv')
+write.csv(outliers, 'outliers_HDL_urate.csv')
+write.csv(hdl_SNPs, 'kept_hdl_SNPs.csv')
+```
+
+# Triglycerides on urate
+
+```{r message=FALSE}
+# Triglycerides on urate
+exposure_dat <- extract_instruments(c('302'))
+exposure_dat <- clump_data(exposure_dat)
+outcome_dat <- extract_outcome_data(exposure_dat$SNP, c('1055'), 
+    proxies = 1, rsq = 0.8, align_alleles = 1, palindromes = 1, maf_threshold = 0.3)
+dat <- harmonise_data(exposure_dat, outcome_dat, action = 2)
+mr_results <- mr(dat)
+
+# Outlier's check
+raddat <- format_radial(BXG=dat$beta.exposure, BYG=dat$beta.outcome, 
+  seBXG=dat$se.exposure, seBYG=dat$se.outcome, RSID=dat$SNP)
+ivwrad <- ivw_radial(raddat, alpha=0.05, weights=1)
+ivwrad2 <- ivw_radial(raddat, alpha=0.05, weights=1)
+dim(ivwrad$outliers)[1] 
+outliers=ivwrad$outliers[1]
+outliers
+write.csv(outliers, 'adv_outliers.csv')
+myvars=outliers$SNP
+dat2 <- dat[ ! dat$SNP %in% myvars, ]
+mr_results <- mr(dat2)
+mr_results
+
+singlesnp_results=mr_singlesnp(dat2, parameters = default_parameters(),
+  single_method = "mr_wald_ratio", 
+  all_method = c("mr_ivw",
+  "mr_egger_regression", 
+  "mr_weighted_mode",
+  "mr_weighted_median"))
+mr_forest_plot(singlesnp_results, exponentiate = FALSE)#saved as PDF, dimensions 8x8
+mr_scatter_plot(mr_results, dat2)
+
+# Remove snps not used in MR
+singlesnp_results.2=singlesnp_results[1:35,]
+dim(singlesnp_results.2)
+dat2.1=dat2[which(dat2$SNP %in% singlesnp_results.2$SNP),]
+dat=dat2.1
+
+# r2 and Fstat
+dat$samplesize.outcome
+dat$samplesize.exposure
+n=mean(dat$samplesize.outcome)
+k=35
+p=dat$eaf.exposure
+r2.1<-(2*(dat$beta.exposure^2)*p*(1-p))/1
+r2=sum(r2.1)
+r2 
+Fstat <- r2*(n-1-k)/((1-r2)*k)
+Fstat
+
+# Combine results
+sin=singlesnp_results
+res=mr_results
+het<-mr_heterogeneity(dat)
+plt<-mr_pleiotropy_test(dat)
+
+write.csv(mr_results,'res_TRI_urate.csv')
+write.csv(singlesnp_results,'singlesnps_TRI_urate.csv')
+write.csv(plt,'plt_TRI_urate.csv')
+write.csv(het,'het_TRI_urate.csv')
+write.csv(dat, 'SIMEX_TRI_urate.csv')
+write.csv(dat, 'SIMEX_dat_TRI_urate.csv')
+write.csv(outliers, 'outliers_TRI_urate.csv')
+```
+
+# Multivariable MR: obesity, HDL, & TRI* on urate
+
+*triglycerides
+```{r message=FALSE}
+# MVMR of obesity, hdl, and triglycerides on urate
+id_exposure=c('ieu-a-90','299', '302')
+id_outcome=c('ieu-a-1055')
+
+exposure_dat <- mv_extract_exposures(id_exposure)
+
+# Remove the obesity on urate obesity outliers
+remove_vars_obesity=c('rs7531118','rs9816226')
+
+# Remove the HDL on urate outliers
+remove_vars_HDL=c('rs102275', 'rs1047891', 'rs11065987', 'rs12133576', 'rs12748152',
+                  'rs12801636','rs13099479','rs13107325', 'rs17145738', 'rs1980493', 'rs2075650', 
+                  'rs2288912','rs2606736', 'rs3741414','rs3861397','rs6031587','rs6567160',
+                  'rs731839', 'rs7607980','rs970548','rs9989419')
+
+remove_vars_tri=c('rs10401969','rs11613352', 'rs11974409','rs12280753','rs1260326',
+             'rs12748152','rs2043085','rs2247056','rs247616','rs439401','rs4587594',
+             'rs4738684','rs4810479','rs588136','rs634869','rs7248104',
+             'rs731839','rs7350481','rs8077889','rs948690')
+
+exposure_dat_minus <- exposure_dat[ !exposure_dat$SNP %in% remove_vars_obesity, ]
+exposure_dat_minus <- exposure_dat_minus[ !exposure_dat_minus$SNP %in% remove_vars_HDL, ]
+exposure_dat_minus <- exposure_dat_minus[ !exposure_dat_minus$SNP %in% remove_vars_tri, ]
+exposure_dat <- clump_data(exposure_dat_minus)
+
+# Extract the outcome data
+outcome_dat <- extract_outcome_data(exposure_dat$SNP, id_outcome)
+
+# Harmonize
+mvdat <- mv_harmonise_data(exposure_dat, outcome_dat)
+
+# Perform MVMR
+res <- mv_multiple(mvdat)
+res
+write.csv(res,"mvmr_obesity_HDL_TRI_urate.csv")
+write.csv(exposure_dat, 'mvmr_dat_obesity_HDL_TRI_urate.csv')
+```
+
+# Multivariable MR: obesity & urate on gout
+
+```{r message=FALSE}
+# Multivariable MR of obesity and urate on gout
+save.image()
+id_exposure=c('ieu-a-90','ieu-a-1055')
+id_outcome=c('UKB-b:13251')
+exposure_dat <- mv_extract_exposures(id_exposure)
+
+obesity_SNPs=read.csv('kept_obesity_SNPs.csv')
+urate_SNPs=read.csv('kept_urate_SNPs_urate_gout.csv')
+
+# Remove the outlier obesity and urate snps
+exposure_dat2 <- exposure_dat[ exposure_dat$SNP %in% obesity_SNPs$x | exposure_dat$SNP %in% urate_SNPs$x, ]
+exposure_dat2 <- clump_data(exposure_dat2)
+
+# Extract the outcome data
+outcome_dat <- extract_outcome_data(exposure_dat2$SNP, id_outcome)
+
+# Harmonize
+mvdat <- mv_harmonise_data(exposure_dat2, outcome_dat)
+
+# Perform MVMR
+res <- mv_multiple(mvdat)
+res
+write.csv(res,"mvmr_urate_obesity_on_gout.csv")
+write.csv(exposure_dat2, 'mvmr_dat_obesity_urate_gout.csv')
+```
+
+# Multivariable MR: obesity & HDL on urate
+
+```{r message=FALSE}
+# MVMR obesity and HDL on urate
+id_exposure=c('ieu-a-90','299')
+id_outcome=c('ieu-a-1055')
+exposure_dat <- mv_extract_exposures(id_exposure)
+dim(exposure_dat)
+
+# Remove the obesity on urate obesity outliers
+remove_vars_obesity=c('rs7531118','rs9816226')
+
+# Remove the HDL on urate outliers
+remove_vars_HDL=c('rs102275', 'rs1047891', 'rs11065987', 'rs12133576', 'rs12748152',
+'rs12801636','rs13099479','rs13107325', 'rs17145738', 'rs1980493', 'rs2075650', 
+'rs2288912','rs2606736', 'rs3741414','rs3861397','rs6031587','rs6567160',
+'rs731839', 'rs7607980','rs970548','rs9989419')
+
+exposure_dat_minus <- exposure_dat[ !exposure_dat$SNP %in% remove_vars_obesity, ]
+exposure_dat_minus <- exposure_dat_minus[ !exposure_dat_minus$SNP %in% remove_vars_HDL, ]
+exposure_dat <- clump_data(exposure_dat_minus)
+
+# Extract the outcome data
+outcome_dat <- extract_outcome_data(exposure_dat$SNP, id_outcome)
+
+# Harmonize
+mvdat <- mv_harmonise_data(exposure_dat, outcome_dat)
+
+# Perform MVMR
+res <- mv_multiple(mvdat)
+res
+write.csv(res,"mvmr_obesity_hdl_on_urate.csv")
+write.csv(exposure_dat, 'mvmr_dat_obesity_hdl_on_urate.csv')
+```
+
+# Rpubs
+Link: https://rpubs.com/Charleen_D_Adams/745696
